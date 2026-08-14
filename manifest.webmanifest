@@ -1,0 +1,17 @@
+{
+  "name": "Base de Datos EST",
+  "short_name": "Base EST",
+  "description": "Base de datos de dispositivos de paneles EST3, EST2, iO y QuickStart",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0b1220",
+  "theme_color": "#0f172a",
+  "lang": "es",
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
