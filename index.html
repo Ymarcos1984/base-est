@@ -165,10 +165,21 @@ select{-webkit-appearance:none;appearance:none;
       <h2>Carga la base de datos del panel</h2>
       <p>Abre directo el archivo de programación. Todo se procesa en tu
          teléfono — no sube a ningún lado.</p>
+      <p style="font-size:12px">En el iPhone: <b>Explorar</b> → busca el archivo.
+         Puedes elegir varios paneles a la vez.</p>
+      <div style="margin:10px 0 4px"><span id="verChip" style="display:inline-block;
+        background:#132339;border:1px solid var(--acc);color:var(--acc);
+        border-radius:20px;padding:5px 14px;font-size:13px;font-weight:600"></span></div>
       <div class="fmt"><span>.SDU EST3</span><span>.SDU EST2</span>
         <span>.SAS iO</span><span>.XDU QuickStart</span><span>EST4 (.zip)</span></div>
       <div style="margin-top:16px"><button class="btn-primary"
         onclick="pickFile()">Elegir archivo</button></div>
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--line)">
+        <div style="font-size:12px;margin-bottom:7px">Si el botón no te deja
+          seleccionar, usa este:</div>
+        <input type="file" id="fileInput2" multiple
+          style="font-size:13px;padding:8px">
+      </div>
     </div>
   </div>
 
@@ -213,9 +224,11 @@ select{-webkit-appearance:none;appearance:none;
   <button class="btn-primary" onclick="openExport()">Exportar</button>
 </div>
 
-<input type="file" id="fileInput" class="hidden"
-  accept=".sdu,.SDU,.sas,.SAS,.xdu,.XDU,.zip,.ZIP">
-<input type="file" id="sessFile" class="hidden" accept=".json,application/json">
+<!-- SIN accept: iOS deja en gris los archivos con extensiones que no conoce
+     (.SDU .SAS .XDU no estan registradas en el sistema). El formato se
+     detecta por el CONTENIDO al abrirlo, no por la extension. -->
+<input type="file" id="fileInput" class="hidden" multiple>
+<input type="file" id="sessFile" class="hidden">
 <div id="printRoot" class="hidden"></div>
 
 <script>/*!
@@ -1017,6 +1030,7 @@ https://github.com/nodeca/pako/blob/main/LICENSE
 <script>
 "use strict";
 var $=function(id){return document.getElementById(id);};
+var APP_VER='v4 (14 ago)';
 var STORE_KEY='est_db_terreno_v1';
 var STATUSES=[{key:'ok',label:'OK'},{key:'falla',label:'Falla'},
               {key:'pend',label:'Pendiente'},{key:'aisl',label:'Aislado'}];
@@ -1048,28 +1062,58 @@ function devType(d){
 
 /* ══════════════════════ carga de archivos ══════════════════════ */
 function pickFile(){menuClose();$('fileInput').click();}
-$('fileInput').addEventListener('change',function(e){
-  var f=e.target.files[0]; if(!f) return;
+function onPick(e){
+  var fs=[].slice.call(e.target.files||[]);
   e.target.value='';
-  loadFile(f);
-});
+  if(!fs.length) return;
+  loadQueue(fs,0);
+}
+$('fileInput').addEventListener('change',onPick);
+if($('fileInput2')) $('fileInput2').addEventListener('change',onPick);
 
-function loadFile(f){
+/* carga en cadena: permite elegir varios paneles de una vez */
+function loadQueue(list,i){
+  if(i>=list.length) return;
+  loadFile(list[i],function(){ loadQueue(list,i+1); });
+}
+
+function loadFile(f,done){
   toast('Leyendo '+f.name+'…');
   var fr=new FileReader();
   fr.onload=function(){
-    try{
-      Readers.readAny(fr.result,f.name,JSZip,function(s){
-        return new DOMParser().parseFromString(s,'text/xml');
-      }).then(function(res){
-        ingest(res,f.name);
-      }).catch(function(err){
-        alert('No se pudo leer el archivo:\n'+(err&&err.message||err));
-      });
-    }catch(err){ alert('No se pudo leer el archivo:\n'+err); }
+    Readers.readAny(fr.result,f.name,JSZip,function(s){
+      return new DOMParser().parseFromString(s,'text/xml');
+    }).then(function(res){
+      ingest(res,f.name);
+      if(done) setTimeout(done,60);
+    }).catch(function(err){
+      loadError(f,err);
+      if(done) setTimeout(done,60);
+    });
   };
-  fr.onerror=function(){alert('No se pudo abrir el archivo.');};
+  fr.onerror=function(){
+    alert('No se pudo abrir «'+f.name+'».\n\nSi está en iCloud, ábrelo una vez '+
+          'en la app Archivos para que se descargue al teléfono, y vuelve a '+
+          'intentarlo.');
+    if(done) setTimeout(done,60);
+  };
   fr.readAsArrayBuffer(f);
+}
+
+function loadError(f,err){
+  var m=(err&&err.message)||String(err||'');
+  if(/end of central directory|corrupted|zip/i.test(m)){
+    alert('«'+f.name+'» no es un archivo de programación válido.\n\n'+
+      'La app abre: .SDU (EST3/EST2), .SAS (iO), .XDU (QuickStart) y el .zip '+
+      'del proyecto EST4. Todos son archivos comprimidos por dentro; este no '+
+      'lo es, o se descargó incompleto.');
+  }else if(/formato no reconocido/i.test(m)){
+    alert('«'+f.name+'» sí se abrió, pero no reconozco el formato adentro.\n\n'+
+      'Esperaba encontrar ProjectZip.xml (EST4), PANELn.XML (iO), o las tablas '+
+      'Lrm.db / mcm.db / Cards.DB (EST3, EST2, QuickStart).');
+  }else{
+    alert('No se pudo leer «'+f.name+'»:\n\n'+m);
+  }
 }
 
 function ingest(res,fname){
@@ -1112,7 +1156,8 @@ function updateProjLine(){
   if(fl.length && !(fl.length===1 && (m.project||'').toUpperCase()===fl[0].toUpperCase()))
     parts.push(fl.join(' + '));
   parts.push(state.order.length+' devices');
-  $('projLine').textContent=parts.join(' · ')||'Sin proyecto cargado';
+  $('projLine').textContent=(parts.join(' · ')||'Sin proyecto cargado')+
+    '  ·  '+APP_VER;
 }
 
 function buildFilters(){
@@ -1366,7 +1411,8 @@ function renderTroubles(){
 function menuOpenFn(){
   var h='<div class="backdrop" style="align-items:stretch;justify-content:flex-end" '+
     'onclick="if(event.target===this)menuClose()"><div class="menu">'+
-    '<h3>Menú</h3>'+
+    '<h3>Menú <span style="font-size:11px;color:var(--muted);font-weight:400">'+
+      APP_VER+'</span></h3>'+
     '<button onclick="pickFile()">📂 Cargar archivo del panel</button>'+
     '<button onclick="openProject()">📝 Datos del proyecto</button>'+
     '<div class="sep"></div>'+
@@ -1627,6 +1673,7 @@ function applyState(o){
 
 /* ══════════════════════ arranque ══════════════════════ */
 (function(){
+  var vc=$('verChip'); if(vc) vc.textContent='Versión '+APP_VER;
   var s=loadLocal();
   if(s&&s.order&&s.order.length){ applyState(s); }
   else { updateProjLine(); }
